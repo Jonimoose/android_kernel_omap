@@ -52,6 +52,7 @@
 #include <plat/control.h>
 #include <mach/system.h>
 #include <linux/usb/android_composite.h>
+#include <linux/usb/f_accessory.h>
 #include <linux/wakelock.h>
 
 #include "cm-regbits-34xx.h"
@@ -495,10 +496,28 @@ static char *usb_functions_rndis_adb[] = {
 	"rndis",
 	"adb",
 };
+static char *usb_functions_accessory[] = {
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+"accessory",
+#endif
+};
+static char *usb_functions_accessory_adb[] = {
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+"accessory",
+#endif
+#ifdef CONFIG_USB_ANDROID_ADB
+"adb",
+#endif
+};
+
+
 
 static char *usb_functions_all[] = {
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	"rndis",
+#endif
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+  "accessory",
 #endif
 	"usb_mass_storage",
 	"adb",
@@ -528,6 +547,20 @@ static struct android_usb_product usb_products[] = {
 		.num_functions	= ARRAY_SIZE(usb_functions_rndis_adb),
 		.functions	= usb_functions_rndis_adb,
 	},
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+	{
+		.vendor_id = USB_ACCESSORY_VENDOR_ID,
+		.product_id = USB_ACCESSORY_PRODUCT_ID,
+		.num_functions = ARRAY_SIZE(usb_functions_accessory),
+		.functions = usb_functions_accessory,
+	},
+	{
+		.vendor_id = USB_ACCESSORY_VENDOR_ID,
+		.product_id = USB_ACCESSORY_ADB_PRODUCT_ID,
+		.num_functions = ARRAY_SIZE(usb_functions_accessory_adb),
+		.functions = usb_functions_accessory_adb,
+	},
+#endif
 };
 
 static char *factory_usb_functions[] = {
