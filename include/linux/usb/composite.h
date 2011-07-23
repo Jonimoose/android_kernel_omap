@@ -101,7 +101,6 @@ struct usb_function {
 	struct usb_descriptor_header	**hs_descriptors;
 
 	struct usb_configuration	*config;
-	int				hidden;
 
 	/* disabled is zero if the function is enabled */
 	int disabled;

@@ -75,7 +75,7 @@ static ssize_t enable_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	struct usb_function *f = dev_get_drvdata(dev);
-	return sprintf(buf, "%d\n", !f->hidden);
+	return sprintf(buf, "%d\n", !f->disabled);
 }
 
 static ssize_t enable_store(
@@ -90,7 +90,7 @@ static ssize_t enable_store(
 	if (driver->enable_function)
 		driver->enable_function(f, value);
 	else
-		f->hidden = !value;
+		usb_function_set_enabled(f, value);
 
 	return size;
 }
@@ -99,6 +99,7 @@ static DEVICE_ATTR(enable, S_IRUGO | S_IWUSR, enable_show, enable_store);
 
 void usb_function_set_enabled(struct usb_function *f, int enabled)
 {
+	printk(KERN_INFO "usb_function_set_enabled %s %d\n", f->name, enabled);
 	f->disabled = !enabled;
 	kobject_uevent(&f->dev->kobj, KOBJ_CHANGE);
 }
@@ -106,7 +107,9 @@ void usb_function_set_enabled(struct usb_function *f, int enabled)
 
 void usb_composite_force_reset(struct usb_composite_dev *cdev)
 {
-unsigned long flags;
+	unsigned long flags;
+
+	printk(KERN_INFO "usb_composite_force_reset called\n");
 
 	spin_lock_irqsave(&cdev->lock, flags);
 	/* force reenumeration */
@@ -335,7 +338,7 @@ static int config_buf(struct usb_configuration *config,
 			descriptors = f->hs_descriptors;
 		else
 			descriptors = f->descriptors;
-		if (f->hidden || !descriptors || descriptors[0] == NULL)
+		if (f->disabled || !descriptors || descriptors[0] == NULL)
 			continue;
 		status = usb_descriptor_fillbuf(next, len,
 			(const struct usb_descriptor_header **) descriptors);
@@ -506,7 +509,7 @@ static int set_config(struct usb_composite_dev *cdev,
 
 		if (!f)
 			break;
-		if (f->hidden)
+		if (f->disabled)
 			continue;
 
 		result = f->set_alt(f, tmp, 0);
@@ -828,6 +831,21 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		case USB_DT_STRING:
 			value = get_string(cdev, req->buf,
 					w_index, w_value & 0xff);
+
+			/* Allow functions to handle USB_DT_STRING.
+			 * This is required for MTP.
+			 */
+			if (value < 0) {
+				struct usb_configuration *cfg;
+				list_for_each_entry(cfg, &cdev->configs, list) {
+					if (cfg && cfg->setup) {
+						value = cfg->setup(cfg, ctrl);
+						if (value >= 0)
+							break;
+					}
+				}
+			}
+
 			if (value >= 0)
 				value = min(w_length, (u16) value);
 			break;
@@ -1225,6 +1243,23 @@ static struct usb_gadget_driver composite_driver = {
 	},
 };
 
+static int composite_uevent(struct device *dev, struct kobj_uevent_env *env)
+{
+	struct usb_function *f = dev_get_drvdata(dev);
+
+	printk(KERN_INFO "composite_uevent called\n");
+	if (!f) {
+		/* this happens when the device is first created */
+		return 0;
+	}
+
+	if (add_uevent_var(env, "FUNCTION=%s", f->name))
+		return -ENOMEM;
+	if (add_uevent_var(env, "ENABLED=%d", !f->disabled))
+		return -ENOMEM;
+	return 0;
+}
+
 /**
  * usb_composite_register() - register a composite driver
  * @driver: the driver to register
@@ -1254,6 +1289,7 @@ int __init usb_composite_register(struct usb_composite_driver *driver)
 	driver->class = class_create(THIS_MODULE, "usb_composite");
 	if (IS_ERR(driver->class))
 		return PTR_ERR(driver->class);
+	driver->class->dev_uevent = composite_uevent;
 
 	return usb_gadget_register_driver(&composite_driver);
 }
